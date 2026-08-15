@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f8f7f4" />
+    <script>
+      (() => {
+        const saved = localStorage.getItem("nexrig-theme");
+        const theme = saved === "light" || saved === "dark"
+          ? saved
+          : (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+      })();
+    </script>
+    <meta name="description" content="Cartana marketplace" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=nexrig-n" />
+    <title>NEXRIG — Find your next favorite thing</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

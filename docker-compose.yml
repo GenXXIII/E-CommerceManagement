@@ -1,0 +1,126 @@
+name: ecommerce-development
+
+services:
+  frontend:
+    image: ecommerce-web:dev
+    build:
+      context: ./E-CommerceInterface
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: /api
+        VITE_KEYCLOAK_URL: http://localhost:${KEYCLOAK_PORT:-8080}
+        VITE_KEYCLOAK_REALM: nexrig
+        VITE_KEYCLOAK_CLIENT_ID: nexrig-web
+    container_name: ecommerce-frontend
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+      keycloak:
+        condition: service_started
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+
+  api:
+    image: ecommerce-api:dev
+    build:
+      context: ./E-CommerceSystem
+      dockerfile: Dockerfile
+    container_name: ecommerce-api
+    restart: unless-stopped
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_HTTP_PORTS: 8080
+      ConnectionStrings__DefaultConnection: Server=sqlserver,1433;Database=ECommerceDB;User Id=sa;Password=${SQL_SA_PASSWORD};TrustServerCertificate=True
+      ConnectionStrings__RedisConnection: redis:6379,abortConnect=false
+      Database__ApplyMigrationsOnStartup: "true"
+      Http__DisableHttpsRedirection: "true"
+      Cors__AllowedOrigins__0: http://localhost:${FRONTEND_PORT:-5173}
+      Authentication__Authority: http://localhost:${KEYCLOAK_PORT:-8080}/realms/nexrig
+      Authentication__Audience: nexrig-web
+      Authentication__BackchannelAuthority: http://keycloak:8080/realms/nexrig
+      Authentication__RequireHttpsMetadata: "false"
+      ImageStorage__FrontendRoot: /frontend-images
+    ports:
+      - "${API_PORT:-5267}:8080"
+    volumes:
+      - ecommerce-product-images:/app/uploads
+      - ./E-CommerceInterface/public/images:/frontend-images/public/images
+      - ./E-CommerceInterface/dist/images:/frontend-images/dist/images
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0
+    container_name: ecommerce-keycloak
+    restart: unless-stopped
+    command:
+      - start-dev
+      - --import-realm
+      - --spi-theme--static-max-age=-1
+      - --spi-theme--cache-themes=false
+      - --spi-theme--cache-templates=false
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-keycloak-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-change-me-now}
+    ports:
+      - "${KEYCLOAK_PORT:-8080}:8080"
+    volumes:
+      - ./keycloak/realm:/opt/keycloak/data/import:ro
+      - ./keycloak/themes:/opt/keycloak/themes:ro
+      - ecommerce-keycloak-data:/opt/keycloak/data
+    depends_on:
+      mailpit:
+        condition: service_started
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    container_name: ecommerce-mailpit
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_PORT:-8025}:8025"
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: ecommerce-sqlserver
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${SQL_SA_PASSWORD:?Set SQL_SA_PASSWORD in the root .env file}
+    ports:
+      - "${SQL_PORT:-1433}:1433"
+    volumes:
+      - ecommerce-sql-data:/var/opt/mssql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$${MSSQL_SA_PASSWORD}" -C -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 25s
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: ecommerce-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - ecommerce-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  ecommerce-sql-data:
+  ecommerce-redis-data:
+  ecommerce-product-images:
+  ecommerce-keycloak-data:
